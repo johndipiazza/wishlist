@@ -10,6 +10,11 @@ import {
   Alert,
   CircularProgress,
 } from '@mui/material'
+import {
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+} from 'firebase/auth'
+import { auth } from '../assets/firebase'
 
 interface AuthPageProps {
   onAuthSuccess: () => void
@@ -28,12 +33,6 @@ export default function AuthPage({ onAuthSuccess }: AuthPageProps) {
     e.preventDefault()
     setError('')
     setLoading(true)
-
-    console.log(email, username, password, confirmPassword);
-    
-
-    // Simulate API call delay
-    await new Promise(resolve => setTimeout(resolve, 500))
 
     // Basic validation
     if (!email || !password || (!isLogin && !username)) {
@@ -61,9 +60,18 @@ export default function AuthPage({ onAuthSuccess }: AuthPageProps) {
       }
     }
 
-    // Simulate successful authentication
-    setLoading(false)
-    onAuthSuccess()
+    try {
+      if (isLogin) {
+        await signInWithEmailAndPassword(auth, email, password)
+      } else {
+        await createUserWithEmailAndPassword(auth, email, password)
+      }
+      onAuthSuccess()
+    } catch (err: any) {
+      setError(err.message || 'Authentication failed')
+    } finally {
+      setLoading(false)
+    }
   }
 
   const handleToggleMode = () => {

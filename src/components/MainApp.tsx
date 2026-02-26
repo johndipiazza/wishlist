@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import { signOut } from 'firebase/auth'
+import { auth } from '../assets/firebase'
 import {
   AppBar,
   Toolbar,
@@ -24,7 +26,7 @@ interface MainAppProps {
 export default function MainApp({ onLogout }: MainAppProps) {
   const friends = ['Alice', 'Bob', 'Charlie', 'Diana', 'Eric']
   const [selectedFriend, setSelectedFriend] = useState<string | null>(null)
-  const [currentLoggedInUser] = useState<string>('John')  // The currently logged in user
+  const [currentLoggedInUser] = useState<string>(auth.currentUser?.email?.split('@')[0] || 'User')  // The currently logged in user
   const theme = useTheme()
   const isSmall = useMediaQuery(theme.breakpoints.down('md'))
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -118,7 +120,10 @@ export default function MainApp({ onLogout }: MainAppProps) {
           </Box>
           <Button
             color="inherit"
-            onClick={onLogout}
+            onClick={async () => {
+              await signOut(auth)
+              onLogout()
+            }}
             sx={{ textTransform: 'none' }}
           >
             Logout
