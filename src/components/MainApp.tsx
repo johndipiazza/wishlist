@@ -57,17 +57,12 @@ export default function MainApp({ onLogout }: MainAppProps) {
     'Mechanical keyboard': 'Cherry MX switches, RGB backlight.',
   }
 
-  const [expandedItem, setExpandedItem] = useState<string | null>(null)
   const [itemSupporters, setItemSupporters] = useState<Record<string, string[]>>({})
   const [currentUser] = useState<string>('You')
   const [addModalOpen, setAddModalOpen] = useState<boolean>(false)
   const [addFormTitle, setAddFormTitle] = useState<string>('')
   const [addFormDescription, setAddFormDescription] = useState<string>('')
   const [editingItem, setEditingItem] = useState<string | null>(null)
-
-  const toggleItem = (item: string) => {
-    setExpandedItem(prev => (prev === item ? null : item))
-  }
 
   const addToItem = (item: string) => {
     setItemSupporters((prev: Record<string, string[]>) => ({
