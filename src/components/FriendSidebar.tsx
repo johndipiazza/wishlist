@@ -38,7 +38,7 @@ export default function FriendSidebar({ friends, currentUser, onSelect, onSelect
         }}
         sx={{ mb: 2, border: 1, borderColor: 'divider', borderRadius: 1, flexGrow: 0 }}
       >
-        <ListItemText primary={currentUser} secondary="(Your wishlist)" />
+        <ListItemText sx={{display: 'flex', alignItems: 'center', gap: 1}} primary={currentUser} secondary="(Your wishlist)" />
       </ListItemButton>
 
       <Typography variant="h6" sx={{ mb: 2 }}>
