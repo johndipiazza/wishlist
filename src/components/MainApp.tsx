@@ -14,8 +14,7 @@ import {
 } from '@mui/material'
 import { Menu as MenuIcon } from '@mui/icons-material'
 import FriendSidebar from './FriendSidebar'
-import UserWishlist from './UserWishlist'
-import FriendWishlist from './FriendWishlist'
+import Wishlist from './Wishlist'
 import AddItemModal from './AddItemModal'
 
 interface MainAppProps {
@@ -162,8 +161,9 @@ export default function MainApp({ onLogout }: MainAppProps) {
         <Container maxWidth="md" sx={{ py: 4, flex: 1 }}>
           <Paper elevation={0} sx={{ p: 3, bgcolor: 'background.paper', display: 'flex', flexDirection: 'column', height: '100%' }}>
             {selectedFriend === null ? (
-              <UserWishlist
-                userWishlist={userWishlist}
+              <Wishlist
+                items={userWishlist}
+                itemDetails={itemDetails}
                 onAddClick={handleAddModalOpen}
                 onEditClick={(item) => {
                   setEditingItem(item)
@@ -174,7 +174,7 @@ export default function MainApp({ onLogout }: MainAppProps) {
                 onDeleteItem={deleteUserWishlistItem}
               />
             ) : selectedFriend ? (
-              <FriendWishlist
+              <Wishlist
                 friendName={selectedFriend}
                 items={wishlists[selectedFriend] || []}
                 itemDetails={itemDetails}
