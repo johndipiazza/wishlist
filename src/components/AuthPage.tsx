@@ -14,7 +14,8 @@ import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
 } from 'firebase/auth'
-import { auth } from '../assets/firebase'
+import { collection, doc, setDoc, Timestamp } from 'firebase/firestore'
+import { auth, db } from '../assets/firebase'
 
 interface AuthPageProps {
   onAuthSuccess: () => void
@@ -64,7 +65,16 @@ export default function AuthPage({ onAuthSuccess }: AuthPageProps) {
       if (isLogin) {
         await signInWithEmailAndPassword(auth, email, password)
       } else {
-        await createUserWithEmailAndPassword(auth, email, password)
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password)
+        // Add user to Firestore
+        await setDoc(doc(collection(db, 'users'), userCredential.user.uid), {
+          uid: userCredential.user.uid,
+          email: email,
+          username: username,
+          createdAt: Timestamp.now(),
+          friends: [],
+          wishlist: [],
+        })
       }
       onAuthSuccess()
     } catch (err: any) {
