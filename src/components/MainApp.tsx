@@ -1,6 +1,8 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { signOut } from 'firebase/auth'
-import { auth } from '../assets/firebase'
+import { auth, db } from '../assets/firebase'
+import { doc, getDoc, collection } from 'firebase/firestore'
+import { UserSchema, FriendSchema, type User, type Friend } from '../schemas/userSchema'
 import {
   AppBar,
   Toolbar,
@@ -24,23 +26,53 @@ interface MainAppProps {
 }
 
 export default function MainApp({ onLogout }: MainAppProps) {
-  const friends = ['Alice', 'Bob', 'Charlie', 'Diana', 'Eric']
+  const [currentLoggedInUser, setCurrentLoggedInUser] = useState<User | null>(null)
+  const [friends, setFriends] = useState<Friend[]>([])
   const [selectedFriend, setSelectedFriend] = useState<string | null>(null)
-  const [currentLoggedInUser] = useState<string>(auth.currentUser?.email?.split('@')[0] || 'User')  // The currently logged in user
   const theme = useTheme()
   const isSmall = useMediaQuery(theme.breakpoints.down('md'))
   const [drawerOpen, setDrawerOpen] = useState(false)
 
-  const wishlists: Record<string, string[]> = {
-    Alice: ['New laptop', 'Noise-cancelling headphones', 'Backpack'],
-    Bob: ['Electric guitar', 'Guitar picks', 'Amp'],
-    Charlie: ['Cooking class', 'Mixer', 'Knife set'],
-    Diana: ['Yoga mat', 'Meditation cushion'],
-    Eric: ['Gaming chair', 'Mechanical keyboard'],
-    [currentLoggedInUser]: ['Reading lamp', 'Coffee maker', ],
-  }
-  const [userWishlist, setUserWishlist] = useState<string[]>(wishlists[currentLoggedInUser] || [])
+  // Fetch current user data and friends from Firestore
+  useEffect(() => {
+    const fetchUserDataAndFriends = async () => {
+      if (!auth.currentUser?.uid) return
+      
+      try {
+        // Get current user's document
+        const userDoc = await getDoc(doc(db, 'users', auth.currentUser.uid))
+        if (!userDoc.exists()) return
+        
+        const userData = userDoc.data()
+        const validatedUser = UserSchema.parse(userData)
+        setCurrentLoggedInUser(validatedUser)
+        
+        const friendIds = validatedUser.friends || []
+        
+        // Fetch each friend's data
+        const friendsList: Friend[] = []
+        for (const friendId of friendIds) {
+          const friendDoc = await getDoc(doc(db, 'users', friendId))
+          if (friendDoc.exists()) {
+            const validatedFriend = FriendSchema.parse(friendDoc.data())
+            friendsList.push(validatedFriend)
+          }
+        }
+        
+        setFriends(friendsList)
+      } catch (error) {
+        console.error('Error fetching user data and friends:', error)
+      }
+    }
+    
+    fetchUserDataAndFriends()
+  }, [])
 
+  const wishlists: Record<string, string[]> = {
+    ...(currentLoggedInUser ? { [currentLoggedInUser.username]: ['Reading lamp', 'Coffee maker', ] } : {}),
+  }
+
+  const [userWishlist, setUserWishlist] = useState<string[]>(currentLoggedInUser ? wishlists[currentLoggedInUser.username] || [] : [])
 
   // extra details for each wishlist item
   const itemDetails: Record<string, string> = {
@@ -138,8 +170,8 @@ export default function MainApp({ onLogout }: MainAppProps) {
             ModalProps={{ keepMounted: true }}
           >
             <FriendSidebar
-              friends={friends}
-              currentUser={currentLoggedInUser}
+              friends={friends.map(friend => friend.username)}
+              currentUser={currentLoggedInUser?.username || 'User'}
               onSelect={(name) => {
                 setSelectedFriend(name)
                 setDrawerOpen(false)
@@ -152,8 +184,8 @@ export default function MainApp({ onLogout }: MainAppProps) {
           </Drawer>
         ) : (
           <FriendSidebar
-            friends={friends}
-            currentUser={currentLoggedInUser}
+            friends={friends.map(friend => friend.username)}
+            currentUser={currentLoggedInUser?.username || 'User'}
             onSelect={setSelectedFriend}
             onSelectCurrentUser={() => setSelectedFriend(null)}
           />
