@@ -10,7 +10,7 @@ export const WishlistItemSchema = z.object({
 
 export const UserSchema = z.object({
   uid: z.string(),
-  email: z.string().email(),
+  email: z.email(),
   username: z.string(),
   createdAt: z.any(), // Firestore Timestamp
   friends: z.array(z.string()).default([]),
