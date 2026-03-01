@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { type WishlistItem } from '../schemas/userSchema'
+import { type WishlistItem } from '../schemas/schemas'
 import {
   List,
   ListItem,

@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { signOut } from 'firebase/auth'
-import { auth, db } from '../assets/firebase'
-import { doc, getDoc, collection, onSnapshot, updateDoc, serverTimestamp, getDocs, addDoc, deleteDoc, query, where } from 'firebase/firestore'
-import { UserSchema, FriendSchema, type User, type Friend, type WishlistItem } from '../schemas/userSchema'
+import { auth } from '../assets/firebase'
+import { useCurrentUser } from '../hooks/useCurrentUser'
+import { useWishlistItems, addWishlistItem, updateWishlistItem, deleteWishlistItem } from '../hooks/useWishlistItems'
 import {
   AppBar,
   Toolbar,
@@ -26,82 +26,20 @@ interface MainAppProps {
 }
 
 export default function MainApp({ onLogout }: MainAppProps) {
-  const [currentLoggedInUser, setCurrentLoggedInUser] = useState<User | null>(null)
-  const [friends, setFriends] = useState<Friend[]>([])
+  const { currentUser: currentLoggedInUser, friends } = useCurrentUser()
   const [selectedFriend, setSelectedFriend] = useState<string | null>(null)
   const theme = useTheme()
   const isSmall = useMediaQuery(theme.breakpoints.down('md'))
   const [drawerOpen, setDrawerOpen] = useState(false)
 
-  // Listen to current user document for live updates
-  useEffect(() => {
-    if (!auth.currentUser?.uid) return
 
-    const unsub = onSnapshot(doc(db, 'users', auth.currentUser.uid), async (snapshot) => {
-      if (!snapshot.exists()) return
+  // wishlist for current user pulled via hook
+  const userWishlist = useWishlistItems(auth.currentUser?.uid || '')
 
-      try {
-        const userData = snapshot.data()
-        const validatedUser = UserSchema.parse(userData)
-        setCurrentLoggedInUser(validatedUser)
+  // compute selected friend's uid then use hook
+  const selectedFriendUid = selectedFriend ? friends.find(f => f.username === selectedFriend)?.uid : undefined
+  const friendWishlist = useWishlistItems(selectedFriendUid)
 
-        const friendIds = validatedUser.friends || []
-        const friendsList: Friend[] = []
-        for (const friendId of friendIds) {
-          const friendDoc = await getDoc(doc(db, 'users', friendId))
-          if (friendDoc.exists()) {
-            const validatedFriend = FriendSchema.parse(friendDoc.data())
-            friendsList.push(validatedFriend)
-          }
-        }
-
-        setFriends(friendsList)
-      } catch (err) {
-        console.error('Failed to validate user data:', err)
-      }
-    })
-
-    return () => unsub()
-  }, [])
-
-  const [userWishlist, setUserWishlist] = useState<WishlistItem[]>([])
-  const [friendWishlist, setFriendWishlist] = useState<WishlistItem[]>([])
-
-  const setupWishlistListener = (userId: string, setItems: (items: WishlistItem[]) => void) => {
-    const q = query(collection(db, 'wishlistItems'), where('user', '==', userId))
-    const unsub = onSnapshot(q, (snapshot) => {
-      const items: WishlistItem[] = []
-      snapshot.forEach(docSnap => {
-        const data = docSnap.data()
-        items.push({ ...(data as any), id: docSnap.id })
-      })
-      setItems(items)
-    }, (err) => console.error('wishlistItems listener error', err))
-
-    return unsub
-  }
-
-  // Listen to wishlistItems collection for current user (live updates)
-  useEffect(() => {
-    if (!auth.currentUser?.uid) return
-    const unsub = setupWishlistListener(auth.currentUser.uid, setUserWishlist)
-    return () => unsub()
-  }, [auth.currentUser?.uid])
-
-  // Listen to selected friend's wishlist items
-  useEffect(() => {
-    if (!selectedFriend) {
-      setFriendWishlist([])
-      return
-    }
-    
-    // Find the friend's UID from the friends list
-    const friend = friends.find(f => f.username === selectedFriend)
-    if (!friend?.uid) return
-    
-    const unsub = setupWishlistListener(friend.uid, setFriendWishlist)
-    return () => unsub()
-  }, [selectedFriend, friends])
 
   const [itemSupporters, setItemSupporters] = useState<Record<string, string[]>>({})
   const [currentUser] = useState<string>('You')
@@ -124,18 +62,15 @@ export default function MainApp({ onLogout }: MainAppProps) {
     }))
   }
 
-  // Firestore-backed wishlist operations
+  // Firestore-backed wishlist operations via service helpers
   const submitWishlistItem = async (title: string, description: string) => {
     if (!auth.currentUser) return
-    // const userRef = doc(db, 'users', auth.currentUser.uid)
 
     try {
       if (editingItem) {
-        // editing by id
-        const itemRef = doc(db, 'wishlistItems', editingItem)
-        await updateDoc(itemRef, { title: title.trim(), description: description?.trim() || '', updatedAt: serverTimestamp() })
+        await updateWishlistItem(editingItem, title.trim(), description.trim())
       } else {
-        await addDoc(collection(db, 'wishlistItems'), { title: title.trim(), description: description?.trim() || '', user: auth.currentUser.uid, createdAt: serverTimestamp() })
+        await addWishlistItem(auth.currentUser.uid, title.trim(), description.trim())
       }
     } catch (err) {
       console.error('Failed to submit wishlist item:', err)
@@ -148,9 +83,8 @@ export default function MainApp({ onLogout }: MainAppProps) {
   }
 
   const deleteUserWishlistItem = async (itemId: string) => {
-    if (!auth.currentUser) return
     try {
-      await deleteDoc(doc(db, 'wishlistItems', itemId))
+      await deleteWishlistItem(itemId)
     } catch (err) {
       console.error('Failed to delete wishlist item:', err)
     }
