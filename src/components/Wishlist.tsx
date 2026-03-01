@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { type WishlistItem } from '../schemas/userSchema'
 import {
   List,
   ListItem,
@@ -15,7 +16,7 @@ import { Add as AddIcon, Delete as DeleteIcon, Edit as EditIcon } from '@mui/ico
 
 interface WishlistProps {
   // common props
-  items: string[]
+  items: WishlistItem[]
   itemDetails?: Record<string, string>
 
   // friend-specific
@@ -36,7 +37,6 @@ interface WishlistProps {
 
 export default function Wishlist({
   items,
-  itemDetails = {},
   friendName,
   supporters = {},
   currentUser,
@@ -54,12 +54,18 @@ export default function Wishlist({
 
   const [expandedItem, setExpandedItem] = useState<string | null>(null)
 
-  const toggleItem = (item: string) => {
-    setExpandedItem(prev => (prev === item ? null : item))
+  // Determine a unique key for each item, prioritizing id if available
+  const getItemKey = (item: WishlistItem): string => {
+    return item.id || item.title
   }
 
-  const hasUserAdded = (item: string) => {
-    return currentUser ? supporters[item]?.includes(currentUser) ?? false : false
+  const toggleItem = (item: WishlistItem) => {
+    const key = getItemKey(item)
+    setExpandedItem(prev => (prev === key ? null : key))
+  }
+
+  const hasUserAdded = (key: string) => {
+    return currentUser ? supporters[key]?.includes(currentUser) ?? false : false
   }
 
   return (
@@ -83,77 +89,89 @@ export default function Wishlist({
       </Box>
 
       <List>
-        {(items || []).map(item => (
-          <ListItem
-            key={item}
-            disablePadding
-            sx={{
-              flexDirection: 'column',
-              alignItems: 'stretch',
-              border: 1,
-              borderColor: 'divider',
-              borderRadius: 1,
-              mb: 1,
-            }}
-          >
-            <ListItemButton onClick={() => toggleItem(item)}>
-              <ListItemText primary={item} />
-							{!isFriendView && (onEditClick || onDeleteItem) && (
-								<Box sx={{ display: 'flex', gap: 1 }}>
-									{onEditClick && (
-										<IconButton size="small" onClick={() => onEditClick(item)}>
-											<EditIcon fontSize="small" />
-										</IconButton>
-									)}
-									{onDeleteItem && (
-										<IconButton size="small" onClick={() => onDeleteItem(item)}>
-											<DeleteIcon fontSize="small" />
-										</IconButton>
-									)}
-								</Box>
-							)}
-            </ListItemButton>
-            <Collapse in={expandedItem === item} timeout="auto" unmountOnExit>
-              <Box sx={{ pl: 4, py: 2 }}>
-                <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
-                  {itemDetails[item] || 'No additional details.'}
-                </Typography>
-              </Box>
-            </Collapse>
+        {(items || []).map(item => {
+          const itemKey = getItemKey(item)
+          const itemTitle = item.title
+          const description = item.description || 'No additional details.'
 
-            {isFriendView && (
-              <Box sx={{ borderTop: 1, borderColor: 'divider', bgcolor: 'background.paper', py: 0.5 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap', px: 2 }}>
-                  <Typography variant="caption" sx={{ fontWeight: 600, mr: 1 }}>
-                    Volunteers:
+          return (
+            <ListItem
+              key={itemKey}
+              disablePadding
+              sx={{
+                flexDirection: 'column',
+                alignItems: 'stretch',
+                border: 1,
+                borderColor: 'divider',
+                borderRadius: 1,
+                mb: 1,
+              }}
+            >
+              <ListItemButton onClick={() => toggleItem(item)}>
+                <ListItemText primary={itemTitle} />
+                {!isFriendView && (onEditClick || onDeleteItem) && (
+                  <Box sx={{ display: 'flex', gap: 1 }}>
+                    {onEditClick && (
+                      <IconButton size="small" onClick={(e) => {
+                        e.stopPropagation()
+                        onEditClick(itemKey)
+                      }}>
+                        <EditIcon fontSize="small" />
+                      </IconButton>
+                    )}
+                    {onDeleteItem && (
+                      <IconButton size="small" onClick={(e) => {
+                        e.stopPropagation()
+                        onDeleteItem(itemKey)
+                      }}>
+                        <DeleteIcon fontSize="small" />
+                      </IconButton>
+                    )}
+                  </Box>
+                )}
+              </ListItemButton>
+              <Collapse in={expandedItem === itemKey} timeout="auto" unmountOnExit>
+                <Box sx={{ pl: 4, py: 2 }}>
+                  <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
+                    {description}
                   </Typography>
-                  {supporters[item]?.map(friend => (
-                    <Chip
-                      key={friend}
-                      label={friend}
-                      size="small"
-                      variant="outlined"
-                      onDelete={
-                        friend === currentUser && onRemoveSupporter
-                          ? () => onRemoveSupporter(item)
-                          : undefined
-                      }
-                    />
-                  ))}
-                  {!hasUserAdded(item) && onAddSupporter && (
-                    <IconButton
-                      size="small"
-                      onClick={() => onAddSupporter(item)}
-                      sx={{ ml: 1 }}
-                    >
-                      <AddIcon fontSize="small" />
-                    </IconButton>
-                  )}
                 </Box>
-              </Box>
-            )}
-          </ListItem>
-        ))}
+              </Collapse>
+
+              {isFriendView && (
+                <Box sx={{ borderTop: 1, borderColor: 'divider', bgcolor: 'background.paper', py: 0.5 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap', px: 2 }}>
+                    <Typography variant="caption" sx={{ fontWeight: 600, mr: 1 }}>
+                      Volunteers:
+                    </Typography>
+                    {supporters[itemKey]?.map(friend => (
+                      <Chip
+                        key={friend}
+                        label={friend}
+                        size="small"
+                        variant="outlined"
+                        onDelete={
+                          friend === currentUser && onRemoveSupporter
+                            ? () => onRemoveSupporter(itemKey)
+                            : undefined
+                        }
+                      />
+                    ))}
+                    {!hasUserAdded(itemKey) && onAddSupporter && (
+                      <IconButton
+                        size="small"
+                        onClick={() => onAddSupporter(itemKey)}
+                        sx={{ ml: 1 }}
+                      >
+                        <AddIcon fontSize="small" />
+                      </IconButton>
+                    )}
+                  </Box>
+                </Box>
+              )}
+            </ListItem>
+          )
+        })}
       </List>
     </>
   )

@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
 import { signOut } from 'firebase/auth'
 import { auth, db } from '../assets/firebase'
-import { doc, getDoc, collection } from 'firebase/firestore'
-import { UserSchema, FriendSchema, type User, type Friend } from '../schemas/userSchema'
+import { doc, getDoc, collection, onSnapshot, updateDoc, serverTimestamp, getDocs, addDoc, deleteDoc, query, where } from 'firebase/firestore'
+import { UserSchema, FriendSchema, type User, type Friend, type WishlistItem } from '../schemas/userSchema'
 import {
   AppBar,
   Toolbar,
@@ -33,23 +33,19 @@ export default function MainApp({ onLogout }: MainAppProps) {
   const isSmall = useMediaQuery(theme.breakpoints.down('md'))
   const [drawerOpen, setDrawerOpen] = useState(false)
 
-  // Fetch current user data and friends from Firestore
+  // Listen to current user document for live updates
   useEffect(() => {
-    const fetchUserDataAndFriends = async () => {
-      if (!auth.currentUser?.uid) return
-      
+    if (!auth.currentUser?.uid) return
+
+    const unsub = onSnapshot(doc(db, 'users', auth.currentUser.uid), async (snapshot) => {
+      if (!snapshot.exists()) return
+
       try {
-        // Get current user's document
-        const userDoc = await getDoc(doc(db, 'users', auth.currentUser.uid))
-        if (!userDoc.exists()) return
-        
-        const userData = userDoc.data()
+        const userData = snapshot.data()
         const validatedUser = UserSchema.parse(userData)
         setCurrentLoggedInUser(validatedUser)
-        
+
         const friendIds = validatedUser.friends || []
-        
-        // Fetch each friend's data
         const friendsList: Friend[] = []
         for (const friendId of friendIds) {
           const friendDoc = await getDoc(doc(db, 'users', friendId))
@@ -58,38 +54,54 @@ export default function MainApp({ onLogout }: MainAppProps) {
             friendsList.push(validatedFriend)
           }
         }
-        
+
         setFriends(friendsList)
-      } catch (error) {
-        console.error('Error fetching user data and friends:', error)
+      } catch (err) {
+        console.error('Failed to validate user data:', err)
       }
-    }
-    
-    fetchUserDataAndFriends()
+    })
+
+    return () => unsub()
   }, [])
 
-  const wishlists: Record<string, string[]> = {
-    ...(currentLoggedInUser ? { [currentLoggedInUser.username]: ['Reading lamp', 'Coffee maker', ] } : {}),
+  const [userWishlist, setUserWishlist] = useState<WishlistItem[]>([])
+  const [friendWishlist, setFriendWishlist] = useState<WishlistItem[]>([])
+
+  const setupWishlistListener = (userId: string, setItems: (items: WishlistItem[]) => void) => {
+    const q = query(collection(db, 'wishlistItems'), where('user', '==', userId))
+    const unsub = onSnapshot(q, (snapshot) => {
+      const items: WishlistItem[] = []
+      snapshot.forEach(docSnap => {
+        const data = docSnap.data()
+        items.push({ ...(data as any), id: docSnap.id })
+      })
+      setItems(items)
+    }, (err) => console.error('wishlistItems listener error', err))
+
+    return unsub
   }
 
-  const [userWishlist, setUserWishlist] = useState<string[]>(currentLoggedInUser ? wishlists[currentLoggedInUser.username] || [] : [])
+  // Listen to wishlistItems collection for current user (live updates)
+  useEffect(() => {
+    if (!auth.currentUser?.uid) return
+    const unsub = setupWishlistListener(auth.currentUser.uid, setUserWishlist)
+    return () => unsub()
+  }, [auth.currentUser?.uid])
 
-  // extra details for each wishlist item
-  const itemDetails: Record<string, string> = {
-    'New laptop': 'Looking for a 16" model with M1 chip.',
-    'Noise-cancelling headphones': 'Prefer over-ear, Bluetooth support.',
-    Backpack: 'Needs to fit a 15" laptop and accessories.',
-    'Electric guitar': 'Fender Stratocaster style, used is fine.',
-    'Guitar picks': 'Variety pack, heavy gauge.',
-    Amp: 'Small practice amp, 20W or less.',
-    'Cooking class': 'Italian cuisine preferred.',
-    Mixer: 'Stand mixer with dough hook.',
-    'Knife set': 'High-quality stainless steel blades.',
-    'Yoga mat': 'Non-slip, eco friendly material.',
-    'Meditation cushion': 'Firm and supportive.',
-    'Gaming chair': 'Ergonomic with lumbar support.',
-    'Mechanical keyboard': 'Cherry MX switches, RGB backlight.',
-  }
+  // Listen to selected friend's wishlist items
+  useEffect(() => {
+    if (!selectedFriend) {
+      setFriendWishlist([])
+      return
+    }
+    
+    // Find the friend's UID from the friends list
+    const friend = friends.find(f => f.username === selectedFriend)
+    if (!friend?.uid) return
+    
+    const unsub = setupWishlistListener(friend.uid, setFriendWishlist)
+    return () => unsub()
+  }, [selectedFriend, friends])
 
   const [itemSupporters, setItemSupporters] = useState<Record<string, string[]>>({})
   const [currentUser] = useState<string>('You')
@@ -112,15 +124,38 @@ export default function MainApp({ onLogout }: MainAppProps) {
     }))
   }
 
-  const updateUserWishlistItem = (oldItem: string, newItem: string) => {
-    if (newItem.trim()) {
-      setUserWishlist(prev => prev.map(item => item === oldItem ? newItem.trim() : item))
+  // Firestore-backed wishlist operations
+  const submitWishlistItem = async (title: string, description: string) => {
+    if (!auth.currentUser) return
+    // const userRef = doc(db, 'users', auth.currentUser.uid)
+
+    try {
+      if (editingItem) {
+        // editing by id
+        const itemRef = doc(db, 'wishlistItems', editingItem)
+        await updateDoc(itemRef, { title: title.trim(), description: description?.trim() || '', updatedAt: serverTimestamp() })
+      } else {
+        await addDoc(collection(db, 'wishlistItems'), { title: title.trim(), description: description?.trim() || '', user: auth.currentUser.uid, createdAt: serverTimestamp() })
+      }
+    } catch (err) {
+      console.error('Failed to submit wishlist item:', err)
+    } finally {
+      handleAddModalClose()
+      setEditingItem(null)
+      setAddFormTitle('')
+      setAddFormDescription('')
     }
   }
 
-  const deleteUserWishlistItem = (item: string) => {
-    setUserWishlist(prev => prev.filter(i => i !== item))
+  const deleteUserWishlistItem = async (itemId: string) => {
+    if (!auth.currentUser) return
+    try {
+      await deleteDoc(doc(db, 'wishlistItems', itemId))
+    } catch (err) {
+      console.error('Failed to delete wishlist item:', err)
+    }
   }
+
 
   const handleAddModalOpen = () => {
     setEditingItem(null)
@@ -195,12 +230,13 @@ export default function MainApp({ onLogout }: MainAppProps) {
             {selectedFriend === null ? (
               <Wishlist
                 items={userWishlist}
-                itemDetails={itemDetails}
                 onAddClick={handleAddModalOpen}
-                onEditClick={(item) => {
-                  setEditingItem(item)
-                  setAddFormTitle(item)
-                  setAddFormDescription(itemDetails[item] || '')
+                onEditClick={itemId => {
+                  const existingItem = userWishlist.find(item => item.id === itemId);
+                  if (!existingItem) return
+                  setEditingItem(existingItem.id)
+                  setAddFormTitle(existingItem.title)
+                  setAddFormDescription(existingItem.description || '')
                   setAddModalOpen(true)
                 }}
                 onDeleteItem={deleteUserWishlistItem}
@@ -208,8 +244,7 @@ export default function MainApp({ onLogout }: MainAppProps) {
             ) : selectedFriend ? (
               <Wishlist
                 friendName={selectedFriend}
-                items={wishlists[selectedFriend] || []}
-                itemDetails={itemDetails}
+                items={friendWishlist}
                 supporters={itemSupporters}
                 currentUser={currentUser}
                 onAddSupporter={addToItem}
@@ -225,14 +260,7 @@ export default function MainApp({ onLogout }: MainAppProps) {
           open={addModalOpen}
           onClose={handleAddModalClose}
           isEditing={!!editingItem}
-          onSubmit={(title, description) => {
-            if (editingItem) {
-              updateUserWishlistItem(editingItem, title)
-            } else {
-              setUserWishlist(prev => [...prev, title.trim()])
-            }
-            handleAddModalClose()
-          }}
+          onSubmit={(title, description) => submitWishlistItem(title, description)}
           title={addFormTitle}
           description={addFormDescription}
           onTitleChange={setAddFormTitle}
